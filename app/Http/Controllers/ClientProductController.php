@@ -18,9 +18,22 @@ class ClientProductController extends Controller
             'prdvers' => ['nullable', 'string', 'max:255'],
         ], $form, $this->indexUrl($client, 'client-'.$client->recid), ClientProduct::detailFields());
 
-        $client->products()->create($data);
-
-        return $this->redirectToClient($client, 'Product added.');
+        return $this->runWrite(
+            fn () => $client->products()->create($data),
+            function (ClientProduct $product) {
+                return [
+                    'title' => 'Add product',
+                    'sections' => [[
+                        'heading' => 'Product',
+                        'items' => [[
+                            'label' => $product->prdname,
+                            'after' => $product->only(array_keys(ClientProduct::detailFields())),
+                        ]],
+                    ]],
+                ];
+            },
+            fn () => $this->redirectToClient($client, 'Product added.')
+        );
     }
 
     public function update(Request $request, Client $client, ClientProduct $product): RedirectResponse
@@ -34,17 +47,56 @@ class ClientProductController extends Controller
             'prdvers' => ['nullable', 'string', 'max:255'],
         ], $form, $this->indexUrl($client, 'client-'.$client->recid), ClientProduct::detailFields());
 
-        $product->update($data);
+        $before = $product->only(array_keys(ClientProduct::detailFields()));
 
-        return $this->redirectToClient($client, 'Product updated.');
+        return $this->runWrite(
+            function () use ($product, $data) {
+                $product->update($data);
+
+                return $product->refresh();
+            },
+            function (ClientProduct $updated) use ($before) {
+                return [
+                    'title' => 'Update product',
+                    'sections' => [[
+                        'heading' => 'Product',
+                        'items' => [[
+                            'label' => $updated->prdname,
+                            'before' => $before,
+                            'after' => $updated->only(array_keys(ClientProduct::detailFields())),
+                        ]],
+                    ]],
+                ];
+            },
+            fn () => $this->redirectToClient($client, 'Product updated.')
+        );
     }
 
     public function destroy(Client $client, ClientProduct $product): RedirectResponse
     {
         abort_unless($product->comcode === $client->comcode, 404);
 
-        $product->delete();
+        $before = $product->only(array_keys(ClientProduct::detailFields()));
 
-        return $this->redirectToClient($client, 'Product deleted.');
+        return $this->runWrite(
+            function () use ($product) {
+                $product->delete();
+
+                return true;
+            },
+            function () use ($before) {
+                return [
+                    'title' => 'Delete product',
+                    'sections' => [[
+                        'heading' => 'Product',
+                        'items' => [[
+                            'label' => $before['prdname'] ?? 'Product',
+                            'before' => $before,
+                        ]],
+                    ]],
+                ];
+            },
+            fn () => $this->redirectToClient($client, 'Product deleted.')
+        );
     }
 }

@@ -9,7 +9,6 @@ use App\Support\SearchHighlighter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -139,16 +138,119 @@ class ClientMergeController extends Controller
         $form = 'merge-'.$client->recid;
         $redirect = $this->indexUrl($client, 'client-'.$client->recid);
 
-        DB::transaction(function () use ($client, $target, $productIds, $contactIds, $combineIds, $form, $redirect) {
-            [$moveIds, $combinePairs] = $this->partitionProducts($client, $target, $productIds, $combineIds, $form, $redirect);
+        return $this->runWrite(
+            function () use ($client, $target, $productIds, $contactIds, $combineIds, $form, $redirect) {
+                [$moveIds, $combinePairs, $skipped] = $this->partitionProducts($client, $target, $productIds, $combineIds, $form, $redirect);
 
-            $this->combineProducts($combinePairs);
-            $this->moveRecords(ClientProduct::class, $client, $target, $moveIds, 'products', 'Select products from this company only.', $form, $redirect);
-            $this->moveRecords(ClientContact::class, $client, $target, $contactIds, 'contacts', 'Select contacts from this company only.', $form, $redirect);
-        });
+                $combineReport = [];
 
-        return $this->redirectToClient($client, 'Products and contacts moved.')
-            ->with('merge_delete', $client->recid);
+                foreach ($combinePairs as $pair) {
+                    $combineReport[] = [
+                        'name' => $pair['source']->prdname,
+                        'before_source' => [
+                            'Version' => $pair['source']->prdvers,
+                            'License' => $pair['source']->prdnoli,
+                        ],
+                        'before_target' => [
+                            'Version' => $pair['target']->prdvers,
+                            'License' => $pair['target']->prdnoli,
+                        ],
+                        'after_license' => $this->sumLicenses($pair['source']->prdnoli, $pair['target']->prdnoli),
+                    ];
+                }
+
+                $movedProducts = ClientProduct::query()
+                    ->where('comcode', $client->comcode)
+                    ->whereIn('recid', $moveIds)
+                    ->get()
+                    ->map(fn (ClientProduct $product) => $product->only(['prdname', 'prdvers', 'prdnoli']))
+                    ->all();
+
+                $movedContacts = ClientContact::query()
+                    ->where('comcode', $client->comcode)
+                    ->whereIn('recid', $contactIds)
+                    ->get()
+                    ->map(fn (ClientContact $contact) => $contact->only(array_keys(ClientContact::detailFields())))
+                    ->all();
+
+                $this->combineProducts($combinePairs);
+                $this->moveRecords(ClientProduct::class, $client, $target, $moveIds, 'products', 'Select products from this company only.', $form, $redirect);
+                $this->moveRecords(ClientContact::class, $client, $target, $contactIds, 'contacts', 'Select contacts from this company only.', $form, $redirect);
+
+                return [
+                    'source' => $client->only(['comcode', 'comname']),
+                    'target' => $target->only(['comcode', 'comname']),
+                    'combined' => $combineReport,
+                    'moved_products' => $movedProducts,
+                    'moved_contacts' => $movedContacts,
+                    'skipped' => collect($skipped)->map(fn (ClientProduct $product) => $product->only(['prdname', 'prdvers', 'prdnoli']))->all(),
+                ];
+            },
+            function (array $result) {
+                $sections = [];
+
+                if ($result['combined'] !== []) {
+                    $sections[] = [
+                        'heading' => 'Combined products',
+                        'items' => collect($result['combined'])->map(fn (array $row) => [
+                            'label' => $row['name'],
+                            'before' => [
+                                'A Version' => $row['before_source']['Version'],
+                                'A License' => $row['before_source']['License'],
+                                'B Version' => $row['before_target']['Version'],
+                                'B License' => $row['before_target']['License'],
+                            ],
+                            'after' => [
+                                'Version' => null,
+                                'License' => $row['after_license'],
+                            ],
+                            'note' => 'Company A copy would be removed.',
+                        ])->all(),
+                    ];
+                }
+
+                if ($result['moved_products'] !== []) {
+                    $sections[] = [
+                        'heading' => 'Moved products',
+                        'items' => collect($result['moved_products'])->map(fn (array $row) => [
+                            'label' => $row['prdname'],
+                            'after' => $row,
+                        ])->all(),
+                    ];
+                }
+
+                if ($result['skipped'] !== []) {
+                    $sections[] = [
+                        'heading' => 'Skipped same-name products',
+                        'items' => collect($result['skipped'])->map(fn (array $row) => [
+                            'label' => $row['prdname'],
+                            'before' => $row,
+                            'note' => 'Would stay on Company A.',
+                        ])->all(),
+                    ];
+                }
+
+                if ($result['moved_contacts'] !== []) {
+                    $sections[] = [
+                        'heading' => 'Moved contacts',
+                        'items' => collect($result['moved_contacts'])->map(fn (array $row) => [
+                            'label' => $row['conperson'],
+                            'after' => $row,
+                        ])->all(),
+                    ];
+                }
+
+                return [
+                    'title' => 'Merge '
+                        .(filled($result['source']['comname']) ? $result['source']['comname'] : $result['source']['comcode'])
+                        .' → '
+                        .(filled($result['target']['comname']) ? $result['target']['comname'] : $result['target']['comcode']),
+                    'sections' => $sections,
+                ];
+            },
+            fn () => $this->redirectToClient($client, 'Products and contacts moved.')
+                ->with('merge_delete', $client->recid)
+        );
     }
 
     /**
@@ -197,7 +299,7 @@ class ClientMergeController extends Controller
     /**
      * @param  array<int, int>  $productIds
      * @param  array<int, int>  $combineIds
-     * @return array{0: array<int, int>, 1: array<int, array{source: ClientProduct, target: ClientProduct}>}
+     * @return array{0: array<int, int>, 1: array<int, array{source: ClientProduct, target: ClientProduct}>, 2: array<int, ClientProduct>}
      */
     private function partitionProducts(Client $source, Client $target, array $productIds, array $combineIds, string $form, string $redirect): array
     {
@@ -206,7 +308,7 @@ class ClientMergeController extends Controller
                 $this->failMerge('combine_products', 'Choose products to combine from the selected list.', $form, $redirect);
             }
 
-            return [[], []];
+            return [[], [], []];
         }
 
         $sourceProducts = ClientProduct::query()
@@ -232,6 +334,7 @@ class ClientMergeController extends Controller
         $combineSet = array_fill_keys($combineIds, true);
         $moveIds = [];
         $combinePairs = [];
+        $skipped = [];
 
         foreach ($productIds as $productId) {
             /** @var ClientProduct $sourceProduct */
@@ -255,6 +358,8 @@ class ClientMergeController extends Controller
                     'target' => $match,
                 ];
                 unset($combineSet[$productId]);
+            } else {
+                $skipped[] = $sourceProduct;
             }
         }
 
@@ -262,7 +367,7 @@ class ClientMergeController extends Controller
             $this->failMerge('combine_products', 'Choose products to combine from the selected list.', $form, $redirect);
         }
 
-        return [$moveIds, $combinePairs];
+        return [$moveIds, $combinePairs, $skipped];
     }
 
     /**

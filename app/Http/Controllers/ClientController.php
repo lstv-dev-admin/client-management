@@ -48,9 +48,22 @@ class ClientController extends Controller
         unset($rules['comcode']);
         $data = $this->validateForm($request, $rules, $form, $this->indexUrl(null, 'new-client'), Client::detailFields());
 
-        $client = $this->createClient($data);
-
-        return $this->redirectToClient($client, 'Client created.');
+        return $this->runWrite(
+            fn () => $this->createClient($data),
+            function (Client $client) {
+                return [
+                    'title' => 'Create client',
+                    'sections' => [[
+                        'heading' => 'Company',
+                        'items' => [[
+                            'label' => filled($client->comname) ? $client->comname : $client->comcode,
+                            'after' => $client->only(array_keys(Client::detailFields())),
+                        ]],
+                    ]],
+                ];
+            },
+            fn (Client $client) => $this->redirectToClient($client, 'Client created.')
+        );
     }
 
     public function update(Request $request, Client $client): RedirectResponse
@@ -64,9 +77,29 @@ class ClientController extends Controller
             Client::detailFields()
         );
 
-        $client->update($data);
+        $before = $client->only(array_keys(Client::detailFields()));
 
-        return $this->redirectToClient($client, 'Client updated.');
+        return $this->runWrite(
+            function () use ($client, $data) {
+                $client->update($data);
+
+                return $client->refresh();
+            },
+            function (Client $updated) use ($before) {
+                return [
+                    'title' => 'Update client',
+                    'sections' => [[
+                        'heading' => 'Company',
+                        'items' => [[
+                            'label' => filled($updated->comname) ? $updated->comname : $updated->comcode,
+                            'before' => $before,
+                            'after' => $updated->only(array_keys(Client::detailFields())),
+                        ]],
+                    ]],
+                ];
+            },
+            fn (Client $updated) => $this->redirectToClient($updated, 'Client updated.')
+        );
     }
 
     public function destroy(Request $request, Client $client): RedirectResponse
@@ -74,16 +107,38 @@ class ClientController extends Controller
         $search = trim((string) $request->input('q', ''));
         $page = $request->integer('page');
         $perPage = $this->perPage();
-
-        $client->delete();
-
-        return redirect()
+        $snapshot = $client->only(array_keys(Client::detailFields()));
+        $productCount = $client->products()->count();
+        $contactCount = $client->contacts()->count();
+        $redirect = redirect()
             ->route('clients.index', array_filter([
                 'q' => $search !== '' ? $search : null,
                 'per' => $perPage !== self::PER_PAGE ? $perPage : null,
                 'page' => $page > 1 ? $page : null,
             ]))
             ->with('status', 'Client deleted.');
+
+        return $this->runWrite(
+            function () use ($client) {
+                $client->delete();
+
+                return true;
+            },
+            function () use ($snapshot, $productCount, $contactCount) {
+                return [
+                    'title' => 'Delete client',
+                    'sections' => [[
+                        'heading' => 'Company',
+                        'items' => [[
+                            'label' => filled($snapshot['comname'] ?? null) ? $snapshot['comname'] : ($snapshot['comcode'] ?? 'Company'),
+                            'before' => $snapshot,
+                            'note' => "Would also remove {$productCount} product(s) and {$contactCount} contact(s).",
+                        ]],
+                    ]],
+                ];
+            },
+            fn () => $redirect
+        );
     }
 
     /**

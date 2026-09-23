@@ -10,9 +10,27 @@
 </head>
 <body class="min-h-screen bg-slate-100 font-sans text-sm text-slate-800 antialiased">
     <div class="mx-auto max-w-6xl px-4 py-6">
-        @if (session('status'))
-            <p class="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{{ session('status') }}</p>
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <form method="POST" action="{{ route('dry-run.toggle') }}">
+                @csrf
+                <button
+                    type="submit"
+                    class="rounded-md border px-2.5 py-1 text-xs font-medium {{ session('dry_run') ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50' }}"
+                >
+                    Dry run: {{ session('dry_run') ? 'On' : 'Off' }}
+                </button>
+            </form>
+        </div>
+
+        @if (session('dry_run'))
+            <p class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Dry run is on — actions show what would change, then nothing is saved.</p>
         @endif
+
+        @if (session('status'))
+            <x-flash tone="success">{{ session('status') }}</x-flash>
+        @endif
+
+        @include('partials.dry-run-report')
 
         @yield('content')
     </div>

@@ -4,9 +4,11 @@ use App\Http\Controllers\ClientContactController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\ClientMergeController;
 use App\Http\Controllers\ClientProductController;
+use App\Http\Controllers\DryRunController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [ClientController::class, 'index'])->name('clients.index');
+Route::post('/dry-run', [DryRunController::class, 'toggle'])->name('dry-run.toggle');
 Route::get('/clients/search', [ClientMergeController::class, 'search'])->name('clients.search');
 Route::get('/clients/{client}/summary', [ClientMergeController::class, 'summary'])->name('clients.summary');
 Route::post('/clients/{client}/merge', [ClientMergeController::class, 'store'])->name('clients.merge');

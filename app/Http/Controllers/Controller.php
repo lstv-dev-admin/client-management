@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use App\Support\DryRun;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -32,6 +34,39 @@ abstract class Controller
         }
 
         return $validator->validated();
+    }
+
+    /**
+     * @template T
+     *
+     * @param  callable(): T  $write
+     * @param  callable(T): array<string, mixed>  $report
+     * @param  callable(T): RedirectResponse  $success
+     */
+    protected function runWrite(callable $write, callable $report, callable $success): RedirectResponse
+    {
+        DB::beginTransaction();
+
+        try {
+            $result = $write();
+            $payload = $report($result);
+
+            if (DryRun::enabled()) {
+                DB::rollBack();
+
+                return redirect()
+                    ->to($this->indexUrl())
+                    ->with('dry_run_report', $payload);
+            }
+
+            DB::commit();
+
+            return $success($result);
+        } catch (\Throwable $exception) {
+            DB::rollBack();
+
+            throw $exception;
+        }
     }
 
     protected function redirectToClient(Client $client, string $status): RedirectResponse
