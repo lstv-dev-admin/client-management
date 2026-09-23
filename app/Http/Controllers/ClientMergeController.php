@@ -62,6 +62,14 @@ class ClientMergeController extends Controller
                 if (str_contains(mb_strtolower((string) $product->prdname), $needle)) {
                     return 'Product: '.$product->prdname;
                 }
+
+                if (str_contains(mb_strtolower((string) $product->prdvers), $needle)) {
+                    return 'Product Version: '.$product->prdvers;
+                }
+
+                if (str_contains(mb_strtolower((string) $product->prdnoli), $needle)) {
+                    return 'Product Number of License: '.$product->prdnoli;
+                }
             }
 
             foreach ($client->contacts as $contact) {
@@ -108,6 +116,8 @@ class ClientMergeController extends Controller
             'products' => $client->products->map(fn (ClientProduct $product) => [
                 'recid' => $product->recid,
                 'prdname' => $product->prdname,
+                'prdnoli' => $product->prdnoli,
+                'prdvers' => $product->prdvers,
             ])->values(),
             'contacts' => $client->contacts->map(fn (ClientContact $contact) => [
                 'recid' => $contact->recid,

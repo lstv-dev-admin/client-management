@@ -12,7 +12,18 @@ class ClientProduct extends Model
     protected $fillable = [
         'comcode',
         'prdname',
+        'prdnoli',
+        'prdvers',
     ];
+
+    public static function detailFields(): array
+    {
+        return [
+            'prdname' => 'Product Name',
+            'prdnoli' => 'Product Number of License',
+            'prdvers' => 'Product Version',
+        ];
+    }
 
     public function client(): BelongsTo
     {

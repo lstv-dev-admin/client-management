@@ -84,7 +84,9 @@ class Client extends Model
                     ->orWhere('bnkname', 'like', $like)
                     ->orWhere('bnkbrn', 'like', $like)
                     ->orWhereHas('products', function ($query) use ($like) {
-                        $query->where('prdname', 'like', $like);
+                        $query->where('prdname', 'like', $like)
+                            ->orWhere('prdnoli', 'like', $like)
+                            ->orWhere('prdvers', 'like', $like);
                     })
                     ->orWhereHas('contacts', function ($query) use ($like) {
                         $query->where('conperson', 'like', $like)

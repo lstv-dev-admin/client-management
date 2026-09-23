@@ -51,7 +51,12 @@
                     @forelse ($client->products as $product)
                         <label class="flex items-start gap-2 py-1 text-sm text-slate-800">
                             <input type="checkbox" name="products[]" value="{{ $product->recid }}" x-model="productIds" class="mt-0.5 rounded border-slate-300">
-                            <span class="min-w-0 break-words">{{ $product->prdname }}</span>
+                            <span class="min-w-0">
+                                <span class="block break-words">{{ $product->prdname }}</span>
+                                @if (filled($product->prdvers) || filled($product->prdnoli))
+                                    <span class="block break-words text-xs text-slate-500">{{ collect([filled($product->prdvers) ? 'Version: '.$product->prdvers : null, filled($product->prdnoli) ? 'License: '.$product->prdnoli : null])->filter()->implode(' · ') }}</span>
+                                @endif
+                            </span>
                         </label>
                     @empty
                         <p class="py-1 text-xs text-slate-400">No products yet</p>
@@ -129,7 +134,10 @@
                     </template>
                     <ul class="divide-y divide-slate-200">
                         <template x-for="product in (target ? target.products : [])" :key="product.recid">
-                            <li class="break-words py-1 text-sm text-slate-800" x-text="product.prdname"></li>
+                            <li class="py-1">
+                                <p class="break-words text-sm text-slate-800" x-text="product.prdname"></p>
+                                <p class="break-words text-xs text-slate-500" x-show="product.prdvers || product.prdnoli" x-text="[product.prdvers ? 'Version: ' + product.prdvers : null, product.prdnoli ? 'License: ' + product.prdnoli : null].filter(Boolean).join(' · ')"></p>
+                            </li>
                         </template>
                     </ul>
 

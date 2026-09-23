@@ -16,6 +16,8 @@ return new class extends Migration
             $table->string('comcode')->comment('Company Code');
             $table->foreign('comcode')->references('comcode')->on('clients')->cascadeOnUpdate()->cascadeOnDelete();
             $table->string('prdname')->comment('Product Name');
+            $table->string('prdnoli')->nullable()->comment('Product Number of License');
+            $table->string('prdvers')->nullable()->comment('Product Version');
             $table->timestamps();
         });
     }

@@ -87,16 +87,25 @@ class ClientManagementTest extends TestCase
         $this->post(route('clients.products.store', $client), [
             'form' => 'product-new-'.$client->recid,
             'prdname' => 'Cement',
+            'prdnoli' => 'LIC-100',
+            'prdvers' => '2.1',
         ])->assertRedirectContains('#client-'.$client->recid);
 
         $product = ClientProduct::query()->where('comcode', $renamed)->where('prdname', 'Cement')->firstOrFail();
+        $this->assertSame('LIC-100', $product->prdnoli);
+        $this->assertSame('2.1', $product->prdvers);
 
         $this->put(route('clients.products.update', [$client, $product]), [
             'form' => 'product-'.$product->recid,
             'prdname' => 'Cement Plus',
+            'prdnoli' => 'LIC-200',
+            'prdvers' => '3.0',
         ])->assertRedirectContains('#client-'.$client->recid);
 
-        $this->assertSame('Cement Plus', $product->refresh()->prdname);
+        $product->refresh();
+        $this->assertSame('Cement Plus', $product->prdname);
+        $this->assertSame('LIC-200', $product->prdnoli);
+        $this->assertSame('3.0', $product->prdvers);
 
         $this->from(route('clients.index'))
             ->post(route('clients.contacts.store', $client), [

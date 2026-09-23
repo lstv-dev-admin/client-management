@@ -14,9 +14,9 @@ class ClientProductController extends Controller
         $form = 'product-new-'.$client->recid;
         $data = $this->validateForm($request, [
             'prdname' => ['required', 'string', 'max:255'],
-        ], $form, $this->indexUrl($client, 'client-'.$client->recid), [
-            'prdname' => 'Product Name',
-        ]);
+            'prdnoli' => ['nullable', 'string', 'max:255'],
+            'prdvers' => ['nullable', 'string', 'max:255'],
+        ], $form, $this->indexUrl($client, 'client-'.$client->recid), ClientProduct::detailFields());
 
         $client->products()->create($data);
 
@@ -30,9 +30,9 @@ class ClientProductController extends Controller
         $form = 'product-'.$product->recid;
         $data = $this->validateForm($request, [
             'prdname' => ['required', 'string', 'max:255'],
-        ], $form, $this->indexUrl($client, 'client-'.$client->recid), [
-            'prdname' => 'Product Name',
-        ]);
+            'prdnoli' => ['nullable', 'string', 'max:255'],
+            'prdvers' => ['nullable', 'string', 'max:255'],
+        ], $form, $this->indexUrl($client, 'client-'.$client->recid), ClientProduct::detailFields());
 
         $product->update($data);
 
