@@ -132,14 +132,18 @@ class ClientMergeController extends Controller
     public function store(Request $request, Client $client): RedirectResponse
     {
         $data = $this->validateMerge($request, $client);
-        $target = Client::query()->findOrFail($data['target']);
-        $productIds = array_values(array_unique($data['products'] ?? []));
-        $contactIds = array_values(array_unique($data['contacts'] ?? []));
+        $target = Client::query()->with('products')->findOrFail($data['target']);
+        $productIds = array_values(array_unique(array_map('intval', $data['products'] ?? [])));
+        $contactIds = array_values(array_unique(array_map('intval', $data['contacts'] ?? [])));
+        $combineIds = array_values(array_unique(array_map('intval', $data['combine_products'] ?? [])));
         $form = 'merge-'.$client->recid;
         $redirect = $this->indexUrl($client, 'client-'.$client->recid);
 
-        DB::transaction(function () use ($client, $target, $productIds, $contactIds, $form, $redirect) {
-            $this->moveRecords(ClientProduct::class, $client, $target, $productIds, 'products', 'Select products from this company only.', $form, $redirect);
+        DB::transaction(function () use ($client, $target, $productIds, $contactIds, $combineIds, $form, $redirect) {
+            [$moveIds, $combinePairs] = $this->partitionProducts($client, $target, $productIds, $combineIds, $form, $redirect);
+
+            $this->combineProducts($combinePairs);
+            $this->moveRecords(ClientProduct::class, $client, $target, $moveIds, 'products', 'Select products from this company only.', $form, $redirect);
             $this->moveRecords(ClientContact::class, $client, $target, $contactIds, 'contacts', 'Select contacts from this company only.', $form, $redirect);
         });
 
@@ -157,6 +161,8 @@ class ClientMergeController extends Controller
             'target' => ['required', 'integer', 'exists:clients,recid', Rule::notIn([$client->recid])],
             'products' => ['nullable', 'array'],
             'products.*' => ['integer'],
+            'combine_products' => ['nullable', 'array'],
+            'combine_products.*' => ['integer'],
             'contacts' => ['nullable', 'array'],
             'contacts.*' => ['integer'],
         ], [
@@ -189,6 +195,131 @@ class ClientMergeController extends Controller
     }
 
     /**
+     * @param  array<int, int>  $productIds
+     * @param  array<int, int>  $combineIds
+     * @return array{0: array<int, int>, 1: array<int, array{source: ClientProduct, target: ClientProduct}>}
+     */
+    private function partitionProducts(Client $source, Client $target, array $productIds, array $combineIds, string $form, string $redirect): array
+    {
+        if ($productIds === []) {
+            if ($combineIds !== []) {
+                $this->failMerge('combine_products', 'Choose products to combine from the selected list.', $form, $redirect);
+            }
+
+            return [[], []];
+        }
+
+        $sourceProducts = ClientProduct::query()
+            ->where('comcode', $source->comcode)
+            ->whereIn('recid', $productIds)
+            ->get()
+            ->keyBy('recid');
+
+        if ($sourceProducts->count() !== count($productIds)) {
+            $this->failMerge('products', 'Select products from this company only.', $form, $redirect);
+        }
+
+        $targetByName = [];
+
+        foreach ($target->products as $product) {
+            $key = $this->productNameKey($product->prdname);
+
+            if ($key !== '' && ! array_key_exists($key, $targetByName)) {
+                $targetByName[$key] = $product;
+            }
+        }
+
+        $combineSet = array_fill_keys($combineIds, true);
+        $moveIds = [];
+        $combinePairs = [];
+
+        foreach ($productIds as $productId) {
+            /** @var ClientProduct $sourceProduct */
+            $sourceProduct = $sourceProducts->get($productId);
+            $key = $this->productNameKey($sourceProduct->prdname);
+            $match = $key !== '' ? ($targetByName[$key] ?? null) : null;
+
+            if ($match === null) {
+                if (isset($combineSet[$productId])) {
+                    $this->failMerge('combine_products', 'Only matching product names can be combined.', $form, $redirect);
+                }
+
+                $moveIds[] = $productId;
+
+                continue;
+            }
+
+            if (isset($combineSet[$productId])) {
+                $combinePairs[] = [
+                    'source' => $sourceProduct,
+                    'target' => $match,
+                ];
+                unset($combineSet[$productId]);
+            }
+        }
+
+        if ($combineSet !== []) {
+            $this->failMerge('combine_products', 'Choose products to combine from the selected list.', $form, $redirect);
+        }
+
+        return [$moveIds, $combinePairs];
+    }
+
+    /**
+     * @param  array<int, array{source: ClientProduct, target: ClientProduct}>  $pairs
+     */
+    private function combineProducts(array $pairs): void
+    {
+        foreach ($pairs as $pair) {
+            $pair['target']->update([
+                'prdnoli' => $this->sumLicenses($pair['source']->prdnoli, $pair['target']->prdnoli),
+                'prdvers' => null,
+            ]);
+
+            $pair['source']->delete();
+        }
+    }
+
+    private function sumLicenses(mixed $left, mixed $right): ?string
+    {
+        $leftValue = $this->wholeLicenseNumber($left);
+        $rightValue = $this->wholeLicenseNumber($right);
+
+        if ($leftValue === null || $rightValue === null) {
+            return null;
+        }
+
+        return (string) ($leftValue + $rightValue);
+    }
+
+    private function wholeLicenseNumber(mixed $value): ?int
+    {
+        $trimmed = trim((string) $value);
+
+        if ($trimmed === '' || preg_match('/^\d+$/', $trimmed) !== 1) {
+            return null;
+        }
+
+        return (int) $trimmed;
+    }
+
+    private function productNameKey(?string $name): string
+    {
+        return mb_strtolower(trim((string) $name));
+    }
+
+    private function failMerge(string $field, string $message, string $form, string $redirect): never
+    {
+        $exception = ValidationException::withMessages([
+            $field => $message,
+        ]);
+        $exception->errorBag($form);
+        $exception->redirectTo($redirect);
+
+        throw $exception;
+    }
+
+    /**
      * @param  class-string<ClientProduct|ClientContact>  $model
      * @param  array<int, int|string>  $ids
      */
@@ -204,13 +335,7 @@ class ClientMergeController extends Controller
             ->update(['comcode' => $target->comcode]);
 
         if ($updated !== count($ids)) {
-            $exception = ValidationException::withMessages([
-                $field => $message,
-            ]);
-            $exception->errorBag($form);
-            $exception->redirectTo($redirect);
-
-            throw $exception;
+            $this->failMerge($field, $message, $form, $redirect);
         }
     }
 }

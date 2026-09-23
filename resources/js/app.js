@@ -54,9 +54,13 @@ document.addEventListener('alpine:init', () => {
         results: [],
         target: null,
         searching: false,
+        combining: false,
+        collisions: [],
+        combineIds: (config.oldCombineProducts || []).map(String),
         productIds: (config.oldProducts || []).map(String),
         contactIds: (config.oldContacts || []).map(String),
-        allProductIds: (config.products || []).map(String),
+        sourceProducts: config.products || [],
+        allProductIds: (config.products || []).map((product) => String(product.recid ?? product)),
         allContactIds: (config.contacts || []).map(String),
         init() {
             if (config.oldTarget) {
@@ -65,6 +69,66 @@ document.addEventListener('alpine:init', () => {
         },
         get ready() {
             return Boolean(this.target) && (this.productIds.length + this.contactIds.length) > 0;
+        },
+        productNameKey(name) {
+            return String(name ?? '').trim().toLowerCase();
+        },
+        findCollisions() {
+            if (! this.target) {
+                return [];
+            }
+
+            const targetByName = new Map();
+
+            (this.target.products || []).forEach((product) => {
+                const key = this.productNameKey(product.prdname);
+
+                if (key !== '' && ! targetByName.has(key)) {
+                    targetByName.set(key, product);
+                }
+            });
+
+            return this.sourceProducts
+                .filter((product) => this.productIds.includes(String(product.recid)))
+                .map((product) => {
+                    const match = targetByName.get(this.productNameKey(product.prdname));
+
+                    if (! match) {
+                        return null;
+                    }
+
+                    return { source: product, target: match };
+                })
+                .filter(Boolean);
+        },
+        requestMerge(event) {
+            if (this.combining || event.target.dataset.combineReady === '1') {
+                delete event.target.dataset.combineReady;
+
+                return;
+            }
+
+            this.collisions = this.findCollisions();
+
+            if (this.collisions.length === 0) {
+                return;
+            }
+
+            event.preventDefault();
+            this.combineIds = this.collisions.map((row) => String(row.source.recid));
+            this.combining = true;
+        },
+        cancelCombine() {
+            this.combining = false;
+            this.collisions = [];
+            this.combineIds = [];
+        },
+        confirmCombine(event) {
+            const form = event.target.closest('form');
+
+            this.combining = false;
+            form.dataset.combineReady = '1';
+            form.requestSubmit();
         },
         async search() {
             const term = this.query.trim();
@@ -100,9 +164,11 @@ document.addEventListener('alpine:init', () => {
             this.target = await response.json();
             this.results = [];
             this.query = '';
+            this.cancelCombine();
         },
         clearTarget() {
             this.target = null;
+            this.cancelCombine();
         },
         highlight(value) {
             const words = this.query.trim().split(/\s+/).filter(Boolean);

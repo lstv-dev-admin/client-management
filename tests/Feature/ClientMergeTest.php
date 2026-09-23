@@ -83,6 +83,92 @@ class ClientMergeTest extends TestCase
         $this->assertModelExists($moveContact);
     }
 
+    public function test_merge_combines_matching_product_licenses(): void
+    {
+        $token = 'CB'.substr(uniqid(), -8);
+        $source = $this->client($token.'A', 'ABC Company '.$token);
+        $target = $this->client($token.'B', 'ABC Company '.$token);
+
+        $sourceProduct = ClientProduct::query()->create([
+            'comcode' => $source->comcode,
+            'prdname' => 'CS TKM EXP',
+            'prdvers' => 'New',
+            'prdnoli' => '8',
+        ]);
+        $targetProduct = ClientProduct::query()->create([
+            'comcode' => $target->comcode,
+            'prdname' => 'cs tkm exp',
+            'prdvers' => 'Additional',
+            'prdnoli' => '1',
+        ]);
+        $unique = ClientProduct::query()->create([
+            'comcode' => $source->comcode,
+            'prdname' => 'Other '.$token,
+            'prdvers' => '1.0',
+            'prdnoli' => '2',
+        ]);
+
+        $this->post(route('clients.merge', $source), [
+            'form' => 'merge-'.$source->recid,
+            'target' => $target->recid,
+            'products' => [$sourceProduct->recid, $unique->recid],
+            'combine_products' => [$sourceProduct->recid],
+        ])->assertRedirect();
+
+        $this->assertModelMissing($sourceProduct);
+        $targetProduct->refresh();
+        $this->assertSame($target->comcode, $targetProduct->comcode);
+        $this->assertSame('9', $targetProduct->prdnoli);
+        $this->assertNull($targetProduct->prdvers);
+        $this->assertSame($target->comcode, $unique->refresh()->comcode);
+        $this->assertSame(
+            1,
+            ClientProduct::query()
+                ->where('comcode', $target->comcode)
+                ->whereRaw('lower(trim(prdname)) = ?', ['cs tkm exp'])
+                ->count()
+        );
+    }
+
+    public function test_merge_skips_matching_products_that_are_not_combined(): void
+    {
+        $token = 'SK'.substr(uniqid(), -8);
+        $source = $this->client($token.'A', 'ABC Company '.$token);
+        $target = $this->client($token.'B', 'ABC Company '.$token);
+
+        $sourceProduct = ClientProduct::query()->create([
+            'comcode' => $source->comcode,
+            'prdname' => 'CS TKM EXP',
+            'prdvers' => 'New',
+            'prdnoli' => '8',
+        ]);
+        $targetProduct = ClientProduct::query()->create([
+            'comcode' => $target->comcode,
+            'prdname' => 'CS TKM EXP',
+            'prdvers' => 'Additional',
+            'prdnoli' => '1',
+        ]);
+
+        $this->post(route('clients.merge', $source), [
+            'form' => 'merge-'.$source->recid,
+            'target' => $target->recid,
+            'products' => [$sourceProduct->recid],
+            'combine_products' => [],
+        ])->assertRedirect();
+
+        $this->assertSame($source->comcode, $sourceProduct->refresh()->comcode);
+        $targetProduct->refresh();
+        $this->assertSame('1', $targetProduct->prdnoli);
+        $this->assertSame('Additional', $targetProduct->prdvers);
+        $this->assertSame(
+            1,
+            ClientProduct::query()
+                ->where('comcode', $target->comcode)
+                ->where('prdname', 'CS TKM EXP')
+                ->count()
+        );
+    }
+
     private function client(string $code, string $name): Client
     {
         return Client::query()->create([

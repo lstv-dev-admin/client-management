@@ -41,12 +41,18 @@
                         x-data="mergeDialog({{ \Illuminate\Support\Js::from([
                             'searchUrl' => route('clients.search', ['except' => $client->recid]),
                             'summaryUrl' => route('clients.summary', ['client' => 999999999]),
-                            'products' => $client->products->pluck('recid')->values(),
+                            'products' => $client->products->map(fn ($product) => [
+                                'recid' => $product->recid,
+                                'prdname' => $product->prdname,
+                                'prdnoli' => $product->prdnoli,
+                                'prdvers' => $product->prdvers,
+                            ])->values(),
                             'contacts' => $client->contacts->pluck('recid')->values(),
                             'reopen' => $mergeFailed,
                             'oldTarget' => $mergeFailed ? old('target') : null,
                             'oldProducts' => $mergeFailed ? array_values((array) old('products', [])) : [],
                             'oldContacts' => $mergeFailed ? array_values((array) old('contacts', [])) : [],
+                            'oldCombineProducts' => $mergeFailed ? array_values((array) old('combine_products', [])) : [],
                         ]) }})"
                     >
                         <button type="button" @click="open = true" class="text-xs font-medium text-violet-700 hover:text-violet-900">Merge</button>

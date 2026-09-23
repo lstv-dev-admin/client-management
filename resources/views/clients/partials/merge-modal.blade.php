@@ -6,7 +6,15 @@
     @click.self="open = false"
     @keydown.escape.window="if (! $store.confirm.open) open = false"
 >
-    <form method="POST" action="{{ route('clients.merge', $client) }}" class="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-lg" role="dialog" aria-modal="true" aria-labelledby="merge-title-{{ $client->recid }}">
+    <form
+        method="POST"
+        action="{{ route('clients.merge', $client) }}"
+        class="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-lg"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="merge-title-{{ $client->recid }}"
+        @submit="requestMerge($event)"
+    >
         @csrf
         <input type="hidden" name="form" value="merge-{{ $client->recid }}">
         <input type="hidden" name="target" :value="target ? target.recid : ''">
@@ -29,8 +37,11 @@
         @error('contacts', 'merge-'.$client->recid)
             <p class="mb-2 text-xs text-red-600">{{ $message }}</p>
         @enderror
+        @error('combine_products', 'merge-'.$client->recid)
+            <p class="mb-2 text-xs text-red-600">{{ $message }}</p>
+        @enderror
 
-        <div class="grid gap-3 md:grid-cols-2">
+        <div x-show="!combining" class="grid gap-3 md:grid-cols-2">
             <section class="rounded-md bg-slate-50 p-3">
                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Company A</p>
                 <h3 class="mt-1 break-words text-sm font-semibold text-slate-900">{{ filled($client->comname) ? $client->comname : $client->comcode }}</h3>
@@ -157,9 +168,40 @@
             </section>
         </div>
 
-        <div class="mt-4 flex items-center justify-end gap-2">
+        <div x-show="combining" x-cloak class="rounded-md border border-amber-100 bg-amber-50/60 p-3">
+            <h3 class="text-sm font-semibold text-slate-900">These products already exist on Company B</h3>
+            <p class="mt-0.5 text-xs text-slate-500">Choose which licenses to combine. Unchecked products stay on Company A so Company B does not get a second product with the same name.</p>
+
+            <ul class="mt-3 divide-y divide-amber-100">
+                <template x-for="row in collisions" :key="row.source.recid">
+                    <li class="py-2">
+                        <label class="flex items-start gap-2 text-sm text-slate-800">
+                            <input type="checkbox" name="combine_products[]" :value="row.source.recid" x-model="combineIds" class="mt-0.5 rounded border-slate-300">
+                            <span class="min-w-0">
+                                <span class="block break-words font-medium" x-text="row.source.prdname"></span>
+                                <span class="mt-0.5 block break-words text-xs text-slate-500">
+                                    Company A:
+                                    <span x-text="[row.source.prdvers ? 'Version: ' + row.source.prdvers : null, row.source.prdnoli ? 'License: ' + row.source.prdnoli : null].filter(Boolean).join(' · ') || '—'"></span>
+                                </span>
+                                <span class="block break-words text-xs text-slate-500">
+                                    Company B:
+                                    <span x-text="[row.target.prdvers ? 'Version: ' + row.target.prdvers : null, row.target.prdnoli ? 'License: ' + row.target.prdnoli : null].filter(Boolean).join(' · ') || '—'"></span>
+                                </span>
+                            </span>
+                        </label>
+                    </li>
+                </template>
+            </ul>
+        </div>
+
+        <div class="mt-4 flex items-center justify-end gap-2" x-show="!combining">
             <button type="button" class="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50" @click="open = false">Cancel</button>
             <button type="submit" class="rounded-md bg-blue-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300" :disabled="!ready">Merge</button>
+        </div>
+
+        <div class="mt-4 flex items-center justify-end gap-2" x-show="combining" x-cloak>
+            <button type="button" class="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50" @click="cancelCombine">Back</button>
+            <button type="button" class="rounded-md bg-blue-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-800" @click="confirmCombine($event)">Confirm merge</button>
         </div>
     </form>
 </div>
