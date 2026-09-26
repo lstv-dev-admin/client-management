@@ -208,6 +208,102 @@ class ClientSearchTest extends TestCase
         ]).'#client-'.$last->recid);
     }
 
+    public function test_bank_code_dropdown_lists_each_distinct_code_once(): void
+    {
+        $token = 'BNK'.substr(uniqid(), -8);
+        $this->client('A'.$token, 'Alpha '.$token, $token);
+        $this->client('B'.$token, 'Beta '.$token, ' '.strtolower($token).' ');
+
+        $page = $this->get(route('clients.index', ['q' => $token]));
+        $page->assertOk()->assertSee('All banks', false)->assertSee('name="bank"', false);
+
+        $this->assertSame(1, preg_match('/<select[^>]*name="bank"[^>]*>(.*?)<\/select>/s', $page->getContent(), $select));
+        $this->assertSame(1, substr_count($select[1], 'value="'.$token.'"'));
+        $this->assertSame(0, substr_count($select[1], 'value="'.strtolower($token).'"'));
+    }
+
+    public function test_bank_filter_combines_with_search_and_ignores_unknown_codes(): void
+    {
+        $token = 'BFL'.substr(uniqid(), -8);
+        $bank = 'ZB'.$token;
+        $this->client('A'.$token, 'Alpha '.$token, $bank);
+        $this->client('R'.$token, 'Zebra '.$token, 'RBK');
+
+        $this->get(route('clients.index', ['bank' => strtolower($bank)]))
+            ->assertOk()
+            ->assertSee('Alpha '.$token)
+            ->assertDontSee('Zebra '.$token)
+            ->assertSee('value="'.$bank.'" selected', false);
+
+        $this->get(route('clients.index', ['q' => $token, 'bank' => $bank]))
+            ->assertOk()
+            ->assertSee('Alpha '.$token)
+            ->assertDontSee('Zebra '.$token);
+
+        $this->get(route('clients.index', ['q' => 'Zebra '.$token, 'bank' => $bank]))
+            ->assertOk()
+            ->assertSee('No clients match your search.')
+            ->assertSee('0 clients')
+            ->assertDontSee('Alpha '.$token);
+
+        $unknown = $this->get(route('clients.index', ['q' => $token, 'bank' => 'NO-SUCH-'.$token]));
+        $unknown->assertOk()
+            ->assertSee('Alpha '.$token)
+            ->assertSee('Zebra '.$token);
+
+        $this->assertSame(1, preg_match('/<select[^>]*name="bank"[^>]*>(.*?)<\/select>/s', $unknown->getContent(), $select));
+        $this->assertStringNotContainsString('NO-SUCH-'.$token, $select[1]);
+        $this->assertStringNotContainsString('selected', $select[1]);
+    }
+
+    public function test_saving_a_client_keeps_the_bank_filter_and_drops_it_when_the_bank_changes(): void
+    {
+        $token = 'BKP'.substr(uniqid(), -8);
+        $bank = 'BK'.$token;
+        $last = null;
+
+        for ($number = 1; $number <= 11; $number++) {
+            $last = $this->client(
+                $token.$number,
+                sprintf('%s-%02d', $token, $number),
+                $bank
+            );
+        }
+
+        $this->put(route('clients.update', $last), [
+            'form' => 'client-'.$last->recid,
+            'q' => $token,
+            'bank' => $bank,
+            'comcode' => $last->comcode,
+            'comname' => $last->comname,
+            'comadd' => $last->comadd,
+            'comcity' => $last->comcity,
+            'comnob' => $last->comnob,
+            'bnkname' => $last->bnkname,
+            'bnkbrn' => $last->bnkbrn,
+        ])->assertRedirect(route('clients.index', [
+            'q' => $token,
+            'bank' => $bank,
+            'page' => 2,
+        ]).'#client-'.$last->recid);
+
+        $this->put(route('clients.update', $last), [
+            'form' => 'client-'.$last->recid,
+            'q' => $token,
+            'bank' => $bank,
+            'comcode' => $last->comcode,
+            'comname' => $last->comname,
+            'comadd' => $last->comadd,
+            'comcity' => $last->comcity,
+            'comnob' => $last->comnob,
+            'bnkname' => 'OTHER'.$token,
+            'bnkbrn' => $last->bnkbrn,
+        ])->assertRedirect(route('clients.index', [
+            'q' => $token,
+            'page' => 2,
+        ]).'#client-'.$last->recid);
+    }
+
     private function client(string $code, string $name, string $bank): Client
     {
         return Client::query()->create([

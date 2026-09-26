@@ -29,7 +29,8 @@
     @if ($search !=='' )
     x-init="$nextTick(() => { $refs.q.focus(); const end = $refs.q.value.length; $refs.q.setSelectionRange(end, end) })"
     @endif
-    x-on:input.debounce.300ms="if ($event.target.name === 'q') $el.requestSubmit()">
+    x-on:input.debounce.300ms="if ($event.target.name === 'q') $el.requestSubmit()"
+    x-on:change="if ($event.target.name === 'bank') $el.requestSubmit()">
     <label class="block min-w-56 flex-1">
         <span class="text-xs font-medium text-slate-500">Search</span>
         <input
@@ -40,6 +41,17 @@
             placeholder="Name, code, address, product, or contact"
             class="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700">
     </label>
+    <label class="block w-44">
+        <span class="text-xs font-medium text-slate-500">Bank Code</span>
+        <select
+            name="bank"
+            class="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700">
+            <option value="">All banks</option>
+            @foreach ($bankCodes as $code)
+                <option value="{{ $code }}" @selected($bank === $code)>{{ $code }}</option>
+            @endforeach
+        </select>
+    </label>
     @if ($perPage !== 10)
         <input type="hidden" name="per" value="{{ $perPage }}">
     @endif
@@ -49,6 +61,8 @@
 <p class="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
     @if ($search !== '')
     No clients match your search.
+    @elseif ($bank !== '')
+    No clients match this bank code.
     @elseif ($clients->currentPage() > 1)
     No clients on this page.
     @else
@@ -68,6 +82,9 @@
         <form method="GET" action="{{ route('clients.index') }}" class="flex items-center gap-2" x-data x-on:change="$el.requestSubmit()">
             @if ($search !== '')
                 <input type="hidden" name="q" value="{{ $search }}">
+            @endif
+            @if ($bank !== '')
+                <input type="hidden" name="bank" value="{{ $bank }}">
             @endif
             <label class="flex items-center gap-2">
                 <span class="font-medium text-slate-500">Per page</span>

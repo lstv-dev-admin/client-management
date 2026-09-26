@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 class Client extends Model
 {
@@ -106,5 +107,35 @@ class Client extends Model
             ->orderByRaw("case when trim(coalesce(comname, '')) = '' then 1 else 0 end")
             ->orderByRaw('trim(comname)')
             ->orderBy('recid');
+    }
+
+    /**
+     * @return Collection<int, string>
+     */
+    public static function bankCodes(): Collection
+    {
+        $codes = static::query()
+            ->whereRaw("trim(coalesce(bnkname, '')) <> ''")
+            ->selectRaw('trim(bnkname) as bank')
+            ->distinct()
+            ->orderBy('bank')
+            ->pluck('bank')
+            ->map(fn ($bank) => (string) $bank);
+
+        return $codes
+            ->unique(fn (string $bank) => mb_strtolower($bank))
+            ->sort(fn (string $left, string $right) => strcasecmp($left, $right))
+            ->values();
+    }
+
+    public function scopeBank($query, string $bank)
+    {
+        $bank = trim($bank);
+
+        if ($bank === '') {
+            return $query;
+        }
+
+        return $query->whereRaw('lower(trim(bnkname)) = ?', [mb_strtolower($bank)]);
     }
 }

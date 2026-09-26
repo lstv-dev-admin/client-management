@@ -7,6 +7,7 @@ use App\Support\DryRun;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -79,9 +80,14 @@ abstract class Controller
     protected function indexUrl(?Client $client = null, ?string $fragment = null): string
     {
         $search = trim((string) request()->input('q', ''));
+        $bank = $this->bank();
 
         if ($client && $search !== '' && ! $this->clientMatchesSearch($client, $search)) {
             $search = '';
+        }
+
+        if ($client && $bank !== '' && ! $this->clientMatchesBank($client, $bank)) {
+            $bank = '';
         }
 
         $params = [];
@@ -90,13 +96,17 @@ abstract class Controller
             $params['q'] = $search;
         }
 
+        if ($bank !== '') {
+            $params['bank'] = $bank;
+        }
+
         $perPage = $this->perPage();
 
         if ($perPage !== self::PER_PAGE) {
             $params['per'] = $perPage;
         }
 
-        $page = $client ? $this->pageFor($client, $search) : request()->integer('page');
+        $page = $client ? $this->pageFor($client, $search, $bank) : request()->integer('page');
 
         if ($page > 1) {
             $params['page'] = $page;
@@ -111,13 +121,14 @@ abstract class Controller
         return $url;
     }
 
-    protected function pageFor(Client $client, string $search): int
+    protected function pageFor(Client $client, string $search, string $bank = ''): int
     {
         $trimmed = trim((string) $client->comname);
         $blank = $trimmed === '';
 
         $before = Client::query()
             ->search($search)
+            ->bank($bank)
             ->where(function (Builder $query) use ($client, $blank, $trimmed) {
                 if ($blank) {
                     $query->whereRaw("trim(coalesce(comname, '')) <> ''")
@@ -157,5 +168,37 @@ abstract class Controller
         }
 
         return Client::query()->whereKey($client->getKey())->search($search)->exists();
+    }
+
+    protected function bank(): string
+    {
+        return $this->matchingBank(Client::bankCodes(), (string) request()->input('bank', ''));
+    }
+
+    /**
+     * @param  Collection<int, string>  $bankCodes
+     */
+    protected function matchingBank(Collection $bankCodes, string $requested): string
+    {
+        $requested = trim($requested);
+
+        if ($requested === '') {
+            return '';
+        }
+
+        $match = $bankCodes->first(
+            fn (string $code) => strcasecmp($code, $requested) === 0
+        );
+
+        return is_string($match) ? $match : '';
+    }
+
+    protected function clientMatchesBank(Client $client, string $bank): bool
+    {
+        if (trim($bank) === '') {
+            return true;
+        }
+
+        return Client::query()->whereKey($client->getKey())->bank($bank)->exists();
     }
 }

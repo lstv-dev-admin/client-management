@@ -1,6 +1,9 @@
 @if (request()->filled('q'))
     <input type="hidden" name="q" value="{{ request('q') }}">
 @endif
+@if (request()->filled('bank'))
+    <input type="hidden" name="bank" value="{{ request('bank') }}">
+@endif
 @if (in_array(request()->integer('per'), [25, 50, 100], true))
     <input type="hidden" name="per" value="{{ request()->integer('per') }}">
 @endif

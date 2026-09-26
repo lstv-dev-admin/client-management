@@ -16,11 +16,14 @@ class ClientController extends Controller
     public function index(Request $request): View|RedirectResponse
     {
         $search = trim((string) $request->query('q', ''));
+        $bankCodes = Client::bankCodes();
+        $bank = $this->matchingBank($bankCodes, (string) $request->query('bank', ''));
         $perPage = $this->perPage();
 
         $clients = Client::query()
             ->with(['products', 'contacts'])
             ->search($search)
+            ->bank($bank)
             ->orderedByName()
             ->paginate($perPage)
             ->withQueryString();
@@ -28,6 +31,7 @@ class ClientController extends Controller
         if ($request->integer('page') > 1 && $clients->currentPage() > $clients->lastPage() && $clients->total() > 0) {
             return redirect()->route('clients.index', array_filter([
                 'q' => $search !== '' ? $search : null,
+                'bank' => $bank !== '' ? $bank : null,
                 'per' => $perPage !== self::PER_PAGE ? $perPage : null,
                 'page' => $clients->lastPage() > 1 ? $clients->lastPage() : null,
             ]));
@@ -36,6 +40,8 @@ class ClientController extends Controller
         return view('clients.index', [
             'clients' => $clients,
             'search' => $search,
+            'bankCodes' => $bankCodes,
+            'bank' => $bank,
             'perPage' => $perPage,
             'terms' => SearchHighlighter::terms($search),
         ]);
@@ -105,6 +111,7 @@ class ClientController extends Controller
     public function destroy(Request $request, Client $client): RedirectResponse
     {
         $search = trim((string) $request->input('q', ''));
+        $bank = $this->bank();
         $page = $request->integer('page');
         $perPage = $this->perPage();
         $snapshot = $client->only(array_keys(Client::detailFields()));
@@ -113,6 +120,7 @@ class ClientController extends Controller
         $redirect = redirect()
             ->route('clients.index', array_filter([
                 'q' => $search !== '' ? $search : null,
+                'bank' => $bank !== '' ? $bank : null,
                 'per' => $perPage !== self::PER_PAGE ? $perPage : null,
                 'page' => $page > 1 ? $page : null,
             ]))
