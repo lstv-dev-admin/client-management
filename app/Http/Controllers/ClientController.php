@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ClientManagementExport;
 use App\Models\Client;
 use App\Support\SearchHighlighter;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ClientController extends Controller
 {
@@ -45,6 +48,28 @@ class ClientController extends Controller
             'perPage' => $perPage,
             'terms' => SearchHighlighter::terms($search),
         ]);
+    }
+
+    public function export(Request $request): BinaryFileResponse|RedirectResponse
+    {
+        $bank = $this->matchingBank(Client::bankCodes(), (string) $request->query('bank', ''));
+
+        if ($bank === '') {
+            return redirect()
+                ->route('clients.index')
+                ->withErrors(['bank' => 'Choose a bank code before exporting.']);
+        }
+
+        $clients = Client::query()
+            ->with([
+                'products' => fn ($query) => $query->orderBy('recid'),
+                'contacts' => fn ($query) => $query->orderBy('recid'),
+            ])
+            ->bank($bank)
+            ->orderedByName()
+            ->get();
+
+        return Excel::download(new ClientManagementExport($clients), ClientManagementExport::FILENAME);
     }
 
     public function store(Request $request): RedirectResponse

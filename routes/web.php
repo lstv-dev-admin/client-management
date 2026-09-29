@@ -8,6 +8,7 @@ use App\Http\Controllers\DryRunController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [ClientController::class, 'index'])->name('clients.index');
+Route::get('/clients/export', [ClientController::class, 'export'])->name('clients.export');
 Route::post('/dry-run', [DryRunController::class, 'toggle'])->name('dry-run.toggle');
 Route::get('/clients/search', [ClientMergeController::class, 'search'])->name('clients.search');
 Route::get('/clients/{client}/summary', [ClientMergeController::class, 'summary'])->name('clients.summary');

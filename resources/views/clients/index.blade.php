@@ -7,7 +7,27 @@
             <h1 class="text-lg font-semibold tracking-tight text-slate-900">Client Management</h1>
             <p class="text-xs text-slate-500">{{ $clients->total() }} {{ $clients->total() === 1 ? 'client' : 'clients' }}</p>
         </div>
-        <button type="button" @click="editing = !editing" class="rounded-md bg-blue-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-800">New client</button>
+        <div class="flex items-center gap-2">
+            <div class="relative" x-data="{ open: {{ $errors->has('bank') ? 'true' : 'false' }} }" @keydown.escape.window="open = false" @click.outside="open = false">
+                <button type="button" @click="open = !open" class="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Export Excel</button>
+                <form x-show="open" x-cloak method="GET" action="{{ route('clients.export') }}" class="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+                    <label class="block">
+                        <span class="text-xs font-medium text-slate-500">Bank Code</span>
+                        <select name="bank" required class="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 outline-none focus:border-blue-700 focus:ring-1 focus:ring-blue-700">
+                            <option value="">Select a bank</option>
+                            @foreach ($bankCodes as $code)
+                                <option value="{{ $code }}" @selected($bank === $code)>{{ $code }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    @error('bank')
+                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                    @enderror
+                    <button type="submit" class="mt-3 w-full rounded-md bg-blue-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-800">Download</button>
+                </form>
+            </div>
+            <button type="button" @click="editing = !editing" class="rounded-md bg-blue-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-800">New client</button>
+        </div>
     </div>
 
     <div x-show="editing" @unless(old('form')==='client-create' ) x-cloak @endunless class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
